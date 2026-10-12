@@ -1,0 +1,49 @@
+name: DB-Tests
+
+# Läuft bei jedem Push, bei Pull Requests und auf Knopfdruck (Actions -> DB-Tests -> Run workflow)
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  db-tests:
+    runs-on: ubuntu-latest
+
+    # Postgres mit pgvector läuft als Hilfsdienst im Hintergrund, nichts muss lokal installiert werden
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_PASSWORD: dev
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      PGHOST: localhost
+      PGUSER: postgres
+      PGPASSWORD: dev
+
+    steps:
+      - name: Repository auschecken
+        uses: actions/checkout@v4
+
+      - name: Testdatenbank anlegen
+        run: psql -d postgres -c "CREATE DATABASE plattform_test"
+
+      - name: Migrationen und RLS-Testsuite ausführen
+        env:
+          PGDATABASE: plattform_test
+        run: |
+          psql -v ON_ERROR_STOP=1 \
+            -f db/migrations/001_core_schema.sql \
+            -f db/migrations/002_knowledge_pgvector.sql \
+            -f db/migrations/003_integrations_knowledge_scopes.sql \
+            -f db/migrations/004_customer_accounts.sql \
+            -f db/migrations/005_ticket_intake.sql \
+            -f db/tests/rls_test_suite.sql
